@@ -1,0 +1,19 @@
+# Compiled Java output (Eclipse / javac)
+bin/
+out/
+target/
+*.class
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Java build tools
+.gradle/
+build/
+
+# Logs
+*.log

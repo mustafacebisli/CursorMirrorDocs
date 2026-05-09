@@ -1,0 +1,71 @@
+---
+description: Whenever a source file is modified, the corresponding `.cursor-docs/` summary MUST be updated in the same turn. This complements `find-or-create-docs.mdc` and makes the sync step a first-class, always-on rule for team environments.
+alwaysApply: true
+---
+
+# Sync `.cursor-docs/` on Source Changes
+
+Team rule. Multiple developers and parallel agents touch the same codebase, so doc
+drift is inevitable unless we enforce sync on every edit.
+
+## The rule
+
+Whenever you (the agent) modify, create, rename, or delete a source file under
+`src/`, you MUST also update the mirrored markdown file under `.cursor-docs/` in
+**the same turn / same diff**, if such a markdown file exists.
+
+Path mirror: `src/<path>/<Name>.<ext>` ↔ `.cursor-docs/src/<path>/<Name>.md`.
+
+### What "update the doc" means
+
+- If the change is **trivial** (rename a private variable, fix a typo, internal
+  refactor with no behavioral change): bump only the `Last verified` date in the
+  doc header. Keep `Status: fresh`.
+- If the change touches the **public API** (new/removed/renamed public method,
+  changed signature, new dependency, new side effect, new exception): update the
+  relevant sections in the doc (`Public API`, `Dependencies`, `Side effects`,
+  `Invariants & gotchas`) AND bump `Last verified`.
+- If you **renamed** the source file: rename the doc file to the new mirrored path
+  in the same turn.
+- If you **deleted** the source file: delete the doc file in the same turn.
+- If you **created** a new source file and a doc does not exist: do NOT auto-create
+  the doc. The doc is created on demand, the first time someone runs "incele" on it
+  (per `find-or-create-docs.mdc`).
+
+### When the doc does not exist
+
+Do nothing on the doc side. Only sync existing docs. This avoids spamming summaries
+for throwaway helpers.
+
+### Reporting
+
+At the end of any turn that modified source code, briefly tell the user which docs
+you updated, in one line each:
+
+> Updated docs:
+> - `.cursor-docs/src/main/java/com/example/business/CustomerService.md`
+
+If no docs needed updating, say so explicitly:
+
+> No `.cursor-docs/` updates needed (no mirrored doc exists for the modified files).
+
+This makes drift visible to reviewers in chat history and PR descriptions.
+
+## Hard constraints
+
+- The doc update MUST live in the same diff/commit as the source change. Do not
+  defer.
+- Do NOT add explanatory comments to source files instead of updating the doc.
+- Do NOT update the doc with a code excerpt; reference symbols by name only.
+- Do NOT exceed ~150 lines per doc. If a major change makes the doc too large,
+  split it.
+- If the user explicitly says "doc'u güncelleme" / "skip docs" / "doc ignore",
+  comply but warn once that the doc will go stale.
+
+## Conflict avoidance for parallel teammates
+
+If you detect that the doc was recently modified (e.g. `Last verified` is today
+and includes content unrelated to your current change), prefer **merging** your
+update on top of the existing structure rather than regenerating from scratch.
+This minimizes merge conflicts when multiple developers' agents touch the same doc
+on the same day.

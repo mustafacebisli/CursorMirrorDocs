@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# Pre-commit hook: enforce that any change under src/ is accompanied by an update
+# to its mirrored summary under .cursor-docs/, if such a summary exists.
+#
+# Behavior:
+#   - For every staged source file under src/, compute the mirrored doc path
+#     .cursor-docs/<same path>/<Name>.md.
+#   - If the doc exists AND the doc is NOT staged in this commit, mark it stale
+#     by patching its `Status:` header to `stale`, stage the change, and warn.
+#   - If the doc does not exist, do nothing (docs are created on demand).
+#
+# To enable in your clone:
+#   git config core.hooksPath .githooks
+#
+# To bypass for a single emergency commit:
+#   git commit --no-verify
+
+set -euo pipefail
+
+# Collect staged files under src/ (Added/Modified/Renamed). Skip deletions.
+mapfile -t STAGED_SRC < <(git diff --cached --name-only --diff-filter=AMR -- 'src/' || true)
+
+if [ ${#STAGED_SRC[@]} -eq 0 ]; then
+  exit 0
+fi
+
+# Collect already-staged doc files so we don't re-mark what's already updated.
+mapfile -t STAGED_DOCS < <(git diff --cached --name-only --diff-filter=AMR -- '.cursor-docs/' || true)
+is_staged_doc() {
+  local target="$1"
+  for d in "${STAGED_DOCS[@]:-}"; do
+    [ "$d" = "$target" ] && return 0
+  done
+  return 1
+}
+
+STALE_MARKED=()
+MISSING_DOCS=()
+
+for src in "${STAGED_SRC[@]}"; do
+  # Strip the file extension to derive the mirrored .md path.
+  base="${src%.*}"
+  doc=".cursor-docs/${base}.md"
+
+  if [ ! -f "$doc" ]; then
+    MISSING_DOCS+=("$src")
+    continue
+  fi
+
+  if is_staged_doc "$doc"; then
+    continue
+  fi
+
+  # The doc exists, the source changed, but the doc was not touched.
+  # Soft-enforce: flip Status to stale and stage the change so the next agent
+  # call regenerates it. We do not block the commit.
+  if grep -q '^> \*\*Status:\*\* `fresh`' "$doc"; then
+    sed -i.bak 's/^> \*\*Status:\*\* `fresh`/> **Status:** `stale`/' "$doc"
+    rm -f "$doc.bak"
+    git add "$doc"
+    STALE_MARKED+=("$doc")
+  fi
+done
+
+if [ ${#STALE_MARKED[@]} -gt 0 ]; then
+  echo ""
+  echo "[pre-commit] The following docs were marked stale because their source changed"
+  echo "[pre-commit] without a corresponding doc update. They will be regenerated on the"
+  echo "[pre-commit] next 'incele' / 'analyze' request:"
+  for d in "${STALE_MARKED[@]}"; do
+    echo "  - $d"
+  done
+  echo ""
+fi
+
+if [ ${#MISSING_DOCS[@]} -gt 0 ]; then
+  echo "[pre-commit] Note: the following changed sources have no doc yet (which is fine,"
+  echo "[pre-commit] docs are created on demand via 'incele'):"
+  for s in "${MISSING_DOCS[@]}"; do
+    echo "  - $s"
+  done
+  echo ""
+fi
+
+exit 0

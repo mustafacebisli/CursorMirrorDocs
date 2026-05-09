@@ -1,0 +1,126 @@
+---
+description: Find-or-Create documentation strategy. When the user asks to analyze/inspect/explain a class or file, first check .cursor-docs/ for an existing summary; if missing or stale, read the source, generate a concise summary, and persist it.
+alwaysApply: true
+---
+
+# Find-or-Create Documentation Strategy
+
+This project keeps lightweight, AI-oriented summaries of source files in `.cursor-docs/`,
+mirroring the source folder layout. Goal: answer "what does this class do?" questions
+WITHOUT re-reading large source files every time, while keeping production code free of
+extra comment noise.
+
+## Trigger phrases (Turkish + English)
+
+When the user asks any of the following about a class, file, module, or symbol:
+
+- TR: "incele", "araştır", "analiz et", "ne yapıyor", "açıkla", "özetle", "ne işe yarıyor"
+- EN: "analyze", "inspect", "explain", "what does ... do", "summarize", "describe"
+
+…follow the workflow below BEFORE doing anything else.
+
+## Path convention
+
+For a source file at `<root>/<path>/<Name>.<ext>` the doc lives at
+`<root>/.cursor-docs/<path>/<Name>.md`.
+
+Examples:
+- `src/services/CustomerService.ts`  →  `.cursor-docs/src/services/CustomerService.md`
+- `app/domain/orders/OrderQueueProcessor.py`  →  `.cursor-docs/app/domain/orders/OrderQueueProcessor.md`
+- `lib/auth/SessionManager.cs`  →  `.cursor-docs/lib/auth/SessionManager.md`
+
+Keep the folder structure 1:1 with the source tree. Create missing folders as needed.
+
+## Workflow
+
+### Step 1 — Locate the source
+Resolve the actual source file path of the requested symbol. If ambiguous (multiple
+matches), ask the user which one before proceeding.
+
+### Step 2 — Check for an existing doc
+Look for the corresponding markdown file under `.cursor-docs/` using the path
+convention above.
+
+### Step 3 — Decide: read doc, or regenerate?
+
+**Use the existing doc when ALL of these are true:**
+- The doc file exists.
+- The doc's `Source SHA` / `Last verified` metadata is not marked `stale`.
+- The user did NOT explicitly say "kodu oku", "read the source", "fresh", "yenile",
+  "force refresh", or similar.
+- The user's question is about *purpose / behavior / responsibilities*, not about
+  *modifying, debugging, or refactoring* the code.
+
+In that case: read ONLY the markdown doc. Answer from it. Do NOT load the source.
+
+**Regenerate the doc when ANY of these are true:**
+- The doc file does not exist.
+- The doc is marked stale.
+- The user asked for a fresh analysis ("yenile", "refresh", "kodu tekrar oku").
+- The user is going to *modify* the class (in which case you still need the source,
+  but afterwards you should also update the doc — see Step 5).
+
+### Step 4 — Generate the doc (when needed)
+1. Read the source file.
+2. Produce a concise summary using the template below. Keep it tight — target
+   60–150 lines max. The point is to be cheap to load, not exhaustive.
+3. Write the markdown file to the mirrored `.cursor-docs/...` path. Create any
+   missing intermediate folders.
+4. Then answer the user's question from the freshly created doc.
+
+### Step 5 — Keep docs in sync with code changes
+Whenever you (the assistant) MODIFY a source file that has a corresponding doc in
+`.cursor-docs/`, you MUST also update that doc in the same turn. If the change is
+significant enough that the summary may no longer match, regenerate the doc.
+
+If the user asks you to modify a class WITHOUT a doc, you do NOT need to create one
+unless they also asked you to "incele/analyze". Don't proactively spam docs.
+
+## Markdown template
+
+When creating or regenerating a doc, use this exact structure:
+
+```markdown
+# <ClassOrFileName>
+
+> **Source:** `<relative/path/to/source>`
+> **Last verified:** `<YYYY-MM-DD>`
+> **Status:** `fresh` | `stale`
+
+## Purpose
+<1–2 sentences. What is this class responsible for? Why does it exist?>
+
+## Public API
+- `methodA(args) -> ReturnType` — <one-line intent>
+- `methodB(args) -> ReturnType` — <one-line intent>
+<List only the public surface. Skip private helpers unless they are central.>
+
+## Dependencies
+- `<OtherClassOrModule>` — <how it is used>
+<Only list the non-trivial dependencies. Skip stdlib / framework noise.>
+
+## Side effects
+<DB writes, network calls, queue publishes, file IO, env reads. One line each.
+If pure, write "None (pure logic).">
+
+## Invariants & gotchas
+<Anything that is not obvious from the signature: idempotency, ordering, threading,
+concurrency assumptions, retry policy, units of measure, etc.>
+
+## Related docs
+- `.cursor-docs/<path>/<Sibling>.md`
+<Cross-link to closely related summaries so the agent can follow the graph cheaply.>
+```
+
+## Hard rules
+
+- Do NOT add explanatory comments to the source code as a side effect of this workflow.
+  All summaries live in `.cursor-docs/` only.
+- Do NOT exceed ~150 lines per doc. If the class genuinely needs more, split into
+  multiple linked docs.
+- Do NOT include large code excerpts in the doc. Reference method names; do not paste
+  bodies.
+- If the user explicitly says "kodu oku" / "read the actual code" / "ignore the doc",
+  bypass the doc and go to source.
+- Treat `.cursor-docs/_TEMPLATE.md` and `.cursor-docs/README.md` as meta files; never
+  generate docs for them.
