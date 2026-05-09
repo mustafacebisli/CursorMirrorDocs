@@ -122,5 +122,3 @@ concurrency assumptions, retry policy, units of measure, etc.>
   bodies.
 - If the user explicitly says "kodu oku" / "read the actual code" / "ignore the doc",
   bypass the doc and go to source.
-- Treat `.cursor-docs/_TEMPLATE.md` and `.cursor-docs/README.md` as meta files; never
-  generate docs for them.
